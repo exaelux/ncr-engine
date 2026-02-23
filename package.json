@@ -1,0 +1,31 @@
+{
+  "name": "ncr-engine",
+  "version": "0.1.0",
+  "description": "Notia Compliance Runtime consuming @notia/core",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "notia": "node dist/src/cli/index.js",
+    "demo:bordertest": "node dist/src/bordertest/demo.js",
+    "demo:tui": "node dist/src/bordertest/demo-tui.js",
+    "start": "node dist/src/cli/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "validate:demo": "node dist/scripts/validate-cli-demo.js"
+  },
+  "keywords": [
+    "ncr",
+    "notia",
+    "compliance",
+    "runtime"
+  ],
+  "license": "ISC",
+  "dependencies": {
+    "@notia/core": "file:../notia-core",
+    "@iota/iota-sdk": "^1.10.1",
+    "@iota/notarization": "^0.1.5",
+    "chalk": "^5.6.2",
+    "dotenv": "^17.3.1",
+    "ora": "^9.3.0"
+  }
+}
