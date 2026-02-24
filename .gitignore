@@ -11,3 +11,6 @@ move/**/build/
 # Accidental local artifacts
 ncr-engine@*
 tsc
+
+# Local wallet material
+company-wallet.json

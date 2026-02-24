@@ -1,35 +1,27 @@
-# NCR Engine
+# NCR — Notia Compliance Runtime
 
-NCR (Notia Compliance Runtime) is the execution/runtime layer.
+NCR is a compliance runtime that consumes the @notia/core semantic standard.
 
-It consumes the chain-agnostic semantic standard from `@notia/core` and applies runtime compliance workflows (BorderTest), on-chain verifications, and anchoring.
+## Architecture
+- notia-core: chain-agnostic semantic standard (CanonicalEvent, SemanticBundle)
+- ncr-engine: compliance runtime (BorderTest profile, IOTA adapters)
 
-## Responsibility
+## Services used
+- IOTA Identity: DID + VC + VP verification
+- IOTA Notarization: proof hash anchor
+- IOTA Move (x4 contracts): anchor, compliance, vehicle_certificate, cargo_manifest
+- IOTA Names: joebloggs.iota human-readable identity
 
-- Run compliance scenarios using semantic bundles from `@notia/core`
-- Verify identity and assets using IOTA adapters
-- Evaluate policy/runtime decisions for operational flows
-- Anchor compliance evidence on IOTA testnet
+## Running the demo
+1. Start identity server: `cd services/iota-identity-backend && ./start.sh`
+2. Run: `npm run demo:tui`
+3. Negative case: `npm run demo:tui:fail`
 
-## Not in This Repo
+## Move contracts (testnet)
+- notia_anchor: 0xf3153d...
+- border_compliance: 0x48ba85...
+- vehicle_certificate: 0xd6e889...
+- cargo_manifest: 0xd1ffed...
 
-The semantic standard itself is in `notia-core` (`@notia/core`):
-
-- canonical semantic model
-- deterministic semantic pipeline
-- structural/core schema validation logic
-
-## Main Runtime Areas
-
-- `src/bordertest/` runtime composition/evaluation/demo
-- `src/iota/` IOTA integrations and on-chain verifiers
-- `src/cli/` CLI runtime entrypoints
-- `move/` Move contracts
-- `events/` runtime event fixtures
-
-## Build
-
-```bash
-npm install
-npm run build
-```
+## Environment
+Copy .env.example and fill in keys.

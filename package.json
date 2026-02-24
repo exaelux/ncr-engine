@@ -9,6 +9,7 @@
     "notia": "node dist/src/cli/index.js",
     "demo:bordertest": "node dist/src/bordertest/demo.js",
     "demo:tui": "node dist/src/bordertest/demo-tui.js",
+    "demo:tui:fail": "node dist/src/bordertest/demo-tui-fail.js",
     "start": "node dist/src/cli/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "validate:demo": "node dist/scripts/validate-cli-demo.js"

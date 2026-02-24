@@ -17,7 +17,7 @@
     "subject_ref": "vehicle:plate:TRUCK-BorderTest",
     "attributes": {
       "token_id": "0x130aad9149f719a3feb40720e8dde5551e895b8de4413d9d40aeb02df9aeead3",
-      "certified": true,
+      "certified": false,
       "expired": false
     }
   },
@@ -28,6 +28,7 @@
     "timestamp": "2026-02-21T09:02:00Z",
     "subject_ref": "cargo:lot:pharma-789",
     "attributes": {
+      "temperature_ok": false,
       "logs": [
         "cold_chain_temperature_log",
         "geo_tracking_log",
