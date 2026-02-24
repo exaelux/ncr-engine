@@ -7,3 +7,7 @@ coverage/
 
 # Move build artifacts
 move/**/build/
+
+# Accidental local artifacts
+ncr-engine@*
+tsc
