@@ -136,6 +136,12 @@ async function main(): Promise<void> {
   }
 
   await sleep(STEP_DELAY_MS);
+  const companyAddress = process.env.COMPANY_ADDRESS ?? "";
+  const companyName = companyAddress ? await resolveIotaName(companyAddress) : null;
+  const companyNameUrl = "https://explorer.iota.org/object/0xbb390c55314f271eb904e598954711fda075af8604b33c948712f29810fe4386?network=testnet";
+  const companyBadge = companyName
+    ? chalk.yellow(terminalLink(companyName, companyNameUrl))
+    : "";
   const vehicleSpinner = ora(chalk.cyan("Checking vehicle certificate on IOTA...")).start();
 
   try {
@@ -154,7 +160,7 @@ async function main(): Promise<void> {
 
     vehicleSpinner.stopAndPersist({
       symbol: chalk.green("✓"),
-      text: `${chalk.cyan("Checking vehicle certificate on IOTA...")} ${vehicleLink}`,
+      text: `${chalk.cyan("Checking vehicle certificate on IOTA...")} ${vehicleLink}\n  ${chalk.cyan("└─ Certified by:")} ${companyBadge.trim()}`,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -183,7 +189,7 @@ async function main(): Promise<void> {
 
     cargoSpinner.stopAndPersist({
       symbol: chalk.green("✓"),
-      text: `${chalk.cyan("Verifying cargo manifest on IOTA...")} ${cargoLink}`,
+      text: `${chalk.cyan("Verifying cargo manifest on IOTA...")} ${cargoLink}\n  ${chalk.cyan("└─ Declared by:")} ${companyBadge.trim()}`,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -198,12 +204,22 @@ async function main(): Promise<void> {
   const complianceSpinner = ora(chalk.cyan("Evaluating cargo compliance...")).start();
 
   const { compliance } = runBorderTest(events);
-  const domains = Object.entries(compliance.evaluated_domains)
-    .map(([domain, state]) => `${domain}:${state}`)
-    .join(", ");
+  const domainMap: Record<string, string> = {
+    identity: "Driver",
+    token: "Vehicle",
+    supply: "Cargo",
+  };
+  const domainDisplay = Object.entries(compliance.evaluated_domains)
+    .map(([domain, state]) => {
+      const label = domainMap[domain] ?? domain;
+      const icon = state === "valid" ? chalk.green("✓") : chalk.red("✗");
+      const text = state === "valid" ? chalk.green(label) : chalk.red(label);
+      return `${text} ${icon}`;
+    })
+    .join(chalk.cyan(" · "));
   complianceSpinner.stopAndPersist({
     symbol: chalk.green("✓"),
-    text: `${chalk.cyan("Evaluating cargo compliance...")} ${chalk.cyan(domains)}`,
+    text: `${chalk.cyan("NCR compliance...")} ${domainDisplay}`,
   });
 
   console.log();
@@ -213,9 +229,10 @@ async function main(): Promise<void> {
   const passed = compliance.result === "valid";
   printResultBanner(passed);
   console.log();
+  const stateLabel = passed ? "VALID" : "REJECT";
   console.log(
-    chalk.cyan("Compliance Result: ") +
-      (passed ? chalk.bold.green("PASSED") : chalk.bold.red("FAILED"))
+    chalk.cyan("Compliance State: ") +
+      (passed ? chalk.bold.green(stateLabel) : chalk.bold.red(stateLabel))
   );
 
   if (!passed) {
