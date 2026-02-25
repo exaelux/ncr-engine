@@ -14,3 +14,6 @@ tsc
 
 # Local wallet material
 company-wallet.json
+*.mjs
+company-wallet.json
+test-*.mjs
