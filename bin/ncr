@@ -1,19 +1,104 @@
 #!/usr/bin/env node
-if (!process.env.DOTENV_CONFIG_QUIET) {
-  process.env.DOTENV_CONFIG_QUIET = "true";
-}
-
-const args = process.argv.slice(2);
-let watchMode = true; // default: `ncr` => watch experience
-for (const arg of args) {
-  if (arg === "demo" || arg === "--demo" || arg === "--no-watch") {
-    watchMode = false;
-    continue;
-  }
-  if (arg === "watch" || arg === "--watch") {
-    watchMode = true;
+async function isReachable(url) {
+  try {
+    await fetch(url, { method: "POST" });
+    return true;
+  } catch {
+    return false;
   }
 }
-process.env.NCR_WATCH_ANIMATE = watchMode ? "1" : "0";
 
-import("../dist/src/bordertest/demo-tui-watch.js");
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ensureIdentityBackend() {
+  const endpoint = process.env.IDENTITY_SERVICE_URL ?? "http://localhost:3002";
+  let endpointUrl;
+  try {
+    endpointUrl = new URL(endpoint);
+  } catch {
+    return;
+  }
+
+  const isLocal =
+    endpointUrl.hostname === "localhost" ||
+    endpointUrl.hostname === "127.0.0.1" ||
+    endpointUrl.hostname === "::1";
+  if (!isLocal) {
+    return;
+  }
+
+  const verifyUrl = new URL("/driver/verify", endpointUrl).toString();
+  if (await isReachable(verifyUrl)) {
+    return;
+  }
+
+  const [{ spawn }, { config }, { existsSync }, { dirname, resolve }] =
+    await Promise.all([
+      import("node:child_process"),
+      import("dotenv"),
+      import("node:fs"),
+      import("node:path"),
+    ]);
+
+  config({ quiet: true });
+
+  const binDir = dirname(resolve(process.argv[1]));
+  const backendDir = resolve(binDir, "../../notia-engine/services/iota-identity-backend");
+  const startScript = resolve(backendDir, "start.sh");
+  if (!existsSync(startScript)) {
+    return;
+  }
+
+  const childEnv = { ...process.env };
+  if (!childEnv.IOTA_API_ENDPOINT) {
+    childEnv.IOTA_API_ENDPOINT = childEnv.IOTA_RPC_URL ?? "https://api.testnet.iota.cafe";
+  }
+  if (!childEnv.IOTA_IDENTITY_PKG_ID) {
+    childEnv.IOTA_IDENTITY_PKG_ID =
+      "0x222741bbdff74b42df48a7b4733185e9b24becb8ccfbafe8eac864ab4e4cc555";
+  }
+  if (!childEnv.STRONGHOLD_PASSWORD) {
+    childEnv.STRONGHOLD_PASSWORD = "notia-dev";
+  }
+
+  spawn("bash", ["-lc", "./start.sh"], {
+    cwd: backendDir,
+    env: childEnv,
+    detached: true,
+    stdio: "ignore",
+  }).unref();
+
+  // First run can take longer due Rust release build.
+  for (let i = 0; i < 300; i++) {
+    if (await isReachable(verifyUrl)) {
+      return;
+    }
+    await sleep(500);
+  }
+}
+
+async function main() {
+  if (!process.env.DOTENV_CONFIG_QUIET) {
+    process.env.DOTENV_CONFIG_QUIET = "true";
+  }
+
+  const args = process.argv.slice(2);
+  let watchMode = true; // default: `ncr` => watch experience
+  for (const arg of args) {
+    if (arg === "demo" || arg === "--demo" || arg === "--no-watch") {
+      watchMode = false;
+      continue;
+    }
+    if (arg === "watch" || arg === "--watch") {
+      watchMode = true;
+    }
+  }
+  process.env.NCR_WATCH_ANIMATE = watchMode ? "1" : "0";
+
+  await ensureIdentityBackend();
+  await import("../dist/src/bordertest/demo-tui-watch.js");
+}
+
+void main();

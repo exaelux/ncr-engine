@@ -5,14 +5,24 @@ export interface DriverIdentityResult {
 }
 
 export async function verifyDriverVP(): Promise<DriverIdentityResult> {
-  const endpoint = process.env.IDENTITY_SERVICE_URL ?? 'http://localhost:3002';
-
-  const response = await fetch(`${endpoint}/driver/verify`, {
-    method: 'POST',
-  });
+  const endpoint = process.env.IDENTITY_SERVICE_URL ?? "http://localhost:3002";
+  const url = `${endpoint}/driver/verify`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Identity service unreachable at ${url}. Start backend at ~/notia-lab/notia-engine/services/iota-identity-backend (error: ${message})`
+    );
+  }
 
   if (!response.ok) {
-    throw new Error(`Identity service error: ${response.status}`);
+    const body = await response.text().catch(() => "");
+    const detail = body ? ` - ${body}` : "";
+    throw new Error(`Identity service error: ${response.status}${detail}`);
   }
 
   const data = await response.json() as {
