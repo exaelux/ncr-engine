@@ -35,7 +35,7 @@ async function ensureIdentityBackend() {
   }
 
   const [
-    { spawn },
+    { spawn, spawnSync },
     { config },
     { existsSync, openSync, closeSync, realpathSync },
     { dirname, resolve },
@@ -76,16 +76,27 @@ async function ensureIdentityBackend() {
   }
 
   const logPath = "/tmp/ncr-identity-backend.log";
-  const logFd = openSync(logPath, "a");
-  spawn("bash", ["-lc", "./start.sh"], {
-    cwd: backendDir,
-    env: childEnv,
-    detached: true,
-    stdio: ["ignore", logFd, logFd],
-  }).unref();
-  closeSync(logFd);
-  console.log(`[ncr] Starting local identity backend (${backendDir})...`);
-  console.log(`[ncr] Build logs: ${logPath}`);
+  const runningPattern =
+    `${backendDir}/target/release/iota-identity-backend|` +
+    `cargo build --release --manifest-path ${backendDir}/Cargo.toml`;
+  const bootstrapRunning =
+    spawnSync("pgrep", ["-f", runningPattern], { stdio: "ignore" }).status === 0;
+
+  if (!bootstrapRunning) {
+    const logFd = openSync(logPath, "a");
+    spawn("bash", ["-lc", "./start.sh"], {
+      cwd: backendDir,
+      env: childEnv,
+      detached: true,
+      stdio: ["ignore", logFd, logFd],
+    }).unref();
+    closeSync(logFd);
+    console.log(`[ncr] Starting local identity backend (${backendDir})...`);
+    console.log(`[ncr] Build logs: ${logPath}`);
+  } else {
+    console.log("[ncr] Local identity backend bootstrap already in progress...");
+    console.log(`[ncr] Build logs: ${logPath}`);
+  }
 
   // First run can take longer due Rust release build.
   for (let i = 0; i < 300; i++) {
