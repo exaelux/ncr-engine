@@ -83,10 +83,17 @@ function printResultBanner(passed: boolean): void {
 
 type DemoTuiOptions = {
   showHeader?: boolean;
+  scanSnapshot?: {
+    epochMs: number;
+    iso: string;
+    date: string;
+    time: string;
+  };
 };
 
 export async function main(options: DemoTuiOptions = {}): Promise<void> {
   const showHeader = options.showHeader ?? true;
+  let pendingSnapshot = options.scanSnapshot;
   let restart = true;
   let hasPrintedHeader = false;
   while (restart) {
@@ -95,6 +102,20 @@ export async function main(options: DemoTuiOptions = {}): Promise<void> {
       printHeader();
       hasPrintedHeader = true;
     }
+    const scanSnapshot = pendingSnapshot ?? {
+      epochMs: Date.now(),
+      iso: new Date().toISOString(),
+      date: new Date().toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "2-digit",
+        year: "numeric",
+      }),
+      time: new Date().toLocaleTimeString("en-US", { hour12: false }),
+    };
+    pendingSnapshot = undefined;
+    console.log(chalk.dim(`Scan Snapshot: ${scanSnapshot.date} ${scanSnapshot.time}`));
+    console.log();
 
   const raw = await readFile("events/bordertest.json", "utf8");
   const events = JSON.parse(raw) as CanonicalEvent[];
@@ -248,7 +269,8 @@ export async function main(options: DemoTuiOptions = {}): Promise<void> {
       result,
       state,
       manual_override,
-      timestamp: Date.now(),
+      timestamp: scanSnapshot.epochMs,
+      scan_snapshot_iso: scanSnapshot.iso,
     };
     const complianceHash = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
     const adapter = new IotaNotarizationAdapter();

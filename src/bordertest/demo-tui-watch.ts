@@ -2,6 +2,12 @@ const C = "\x1b[1;36m", D = "\x1b[2;37m", W = "\x1b[1;37m", R = "\x1b[0m";
 const HIDE = "\x1b[?25l", SHOW = "\x1b[?25h", CLEAR = "\x1b[2J\x1b[H";
 
 const ENABLE_SCAN_EFFECT = process.env.NCR_WATCH_ANIMATE === "1";
+type ScanSnapshot = {
+  epochMs: number;
+  iso: string;
+  date: string;
+  time: string;
+};
 
 const LOGO = [
 "⠯⠟⢉⡽⠏⠤⢤⣤⡤⠤⠄⢤⣤⠤⠴⠤⠤⠠⠤⠴⠤⠆⠤⠤⠤⠤⠄",
@@ -28,6 +34,20 @@ function getDateTime(): { date: string; time: string } {
       year: "numeric",
     }),
     time: now.toLocaleTimeString("en-US", { hour12: false }),
+  };
+}
+
+function makeScanSnapshot(at = new Date()): ScanSnapshot {
+  return {
+    epochMs: at.getTime(),
+    iso: at.toISOString(),
+    date: at.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+    }),
+    time: at.toLocaleTimeString("en-US", { hour12: false }),
   };
 }
 
@@ -102,12 +122,12 @@ function paintLiveTimeAbovePrompt(): void {
   process.stdout.write(`\x1b7\x1b[2A\r\x1b[2K${C}  ${time}${R}\x1b8`);
 }
 
-function waitForEnterInline(promptBase: string, alreadyRendered = false): Promise<void> {
+function waitForEnterInline(promptBase: string, alreadyRendered = false): Promise<ScanSnapshot> {
   if (!process.stdin.isTTY) {
     if (!alreadyRendered) {
       process.stdout.write(promptBase + "\n");
     }
-    return Promise.resolve();
+    return Promise.resolve(makeScanSnapshot());
   }
 
   if (!alreadyRendered) {
@@ -140,33 +160,34 @@ function waitForEnterInline(promptBase: string, alreadyRendered = false): Promis
       process.stdin.setRawMode(false);
       process.stdin.pause();
 
+      const snapshot = makeScanSnapshot();
       // Keep the transition seamless: replace the prompt row in place.
       process.stdout.write("\r\x1b[2K");
-      resolve();
+      resolve(snapshot);
     };
 
     process.stdin.on("data", onData);
   });
 }
 
-async function waitForScan(): Promise<void> {
+async function waitForScan(): Promise<ScanSnapshot> {
   const prompt = "  Press ENTER to start NCR runtime... ";
 
   if (ENABLE_SCAN_EFFECT && supportsAnimatedUi()) {
     renderPrelude(true);
     await runScanEffect();
     await runPromptScan(prompt);
-    await waitForEnterInline(prompt, true);
+    return waitForEnterInline(prompt, true);
   } else {
     renderPrelude(false);
-    await waitForEnterInline(prompt);
+    return waitForEnterInline(prompt);
   }
 }
 
 async function main(): Promise<void> {
-  await waitForScan();
+  const scanSnapshot = await waitForScan();
   const { main: demoMain } = await import("./demo-tui.js");
-  await demoMain({ showHeader: false });
+  await demoMain({ showHeader: false, scanSnapshot });
 }
 
 void main();
