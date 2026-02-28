@@ -1,7 +1,8 @@
 node_modules/
 dist/
 *.log
-.env
+.env*
+!.env.example
 .DS_Store
 coverage/
 
@@ -14,6 +15,19 @@ tsc
 
 # Local wallet material
 company-wallet.json
+wallet*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.stronghold
+driver_did.json
+issuer_did.json
+driver_fragment.txt
+issuer_fragment.txt
+driver_vc.jwt
+driver_vp.jwt
+issuer_vc.jwt
+issuer_vp.jwt
 *.mjs
-company-wallet.json
 test-*.mjs
