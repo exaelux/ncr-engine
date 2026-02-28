@@ -34,7 +34,12 @@ async function ensureIdentityBackend() {
     return;
   }
 
-  const [{ spawn }, { config }, { existsSync, openSync, closeSync }, { dirname, resolve }] =
+  const [
+    { spawn },
+    { config },
+    { existsSync, openSync, closeSync, realpathSync },
+    { dirname, resolve },
+  ] =
     await Promise.all([
       import("node:child_process"),
       import("dotenv"),
@@ -44,12 +49,19 @@ async function ensureIdentityBackend() {
 
   config({ quiet: true });
 
-  const binDir = dirname(resolve(process.argv[1]));
-  const backendDir = resolve(binDir, "../../notia-engine/services/iota-identity-backend");
-  const startScript = resolve(backendDir, "start.sh");
-  if (!existsSync(startScript)) {
+  const scriptPath = process.argv[1] ? realpathSync(process.argv[1]) : "";
+  const binDir = scriptPath ? dirname(scriptPath) : process.cwd();
+  const backendCandidates = [
+    resolve(binDir, "../../notia-engine/services/iota-identity-backend"),
+    resolve(process.cwd(), "../notia-engine/services/iota-identity-backend"),
+  ];
+  const backendDir = backendCandidates.find((candidate) =>
+    existsSync(resolve(candidate, "start.sh"))
+  );
+  if (!backendDir) {
     return;
   }
+  const startScript = resolve(backendDir, "start.sh");
 
   const childEnv = { ...process.env };
   if (!childEnv.IOTA_API_ENDPOINT) {
