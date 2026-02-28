@@ -8,7 +8,7 @@ import { verifyDriverVP } from "../iota/identity-verify.js";
 import { verifyVehicleCertOnChain } from "../iota/vehicle-verify.js";
 import { verifyCargoManifestOnChain } from "../iota/cargo-verify.js";
 
-config();
+config({ quiet: true });
 
 async function main(): Promise<void> {
   console.log("===========================================");

@@ -12,7 +12,8 @@
     "demo:tui:fail": "node dist/src/bordertest/demo-tui-fail.js",
     "start": "node dist/src/cli/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "validate:demo": "node dist/scripts/validate-cli-demo.js"
+    "validate:demo": "node dist/scripts/validate-cli-demo.js",
+    "demo:watch": "node dist/src/bordertest/demo-tui-watch.js"
   },
   "keywords": [
     "ncr",

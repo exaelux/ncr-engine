@@ -10,7 +10,7 @@ import resolveIotaName from "../iota/resolve-name.js";
 import { verifyVehicleCertOnChain } from "../iota/vehicle-verify.js";
 import { runBorderTest } from "./runBorderTest.js";
 
-config();
+config({ quiet: true });
 
 const STEP_DELAY_MS = 500;
 

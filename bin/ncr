@@ -1,0 +1,19 @@
+#!/usr/bin/env node
+if (!process.env.DOTENV_CONFIG_QUIET) {
+  process.env.DOTENV_CONFIG_QUIET = "true";
+}
+
+const args = process.argv.slice(2);
+let watchMode = true; // default: `ncr` => watch experience
+for (const arg of args) {
+  if (arg === "demo" || arg === "--demo" || arg === "--no-watch") {
+    watchMode = false;
+    continue;
+  }
+  if (arg === "watch" || arg === "--watch") {
+    watchMode = true;
+  }
+}
+process.env.NCR_WATCH_ANIMATE = watchMode ? "1" : "0";
+
+import("../dist/src/bordertest/demo-tui-watch.js");

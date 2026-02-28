@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import * as readline from "node:readline";
 import { readFile } from "node:fs/promises";
 import chalk from "chalk";
 import { config } from "dotenv";
@@ -12,7 +13,7 @@ import resolveIotaName from "../iota/resolve-name.js";
 import { verifyVehicleCertOnChain } from "../iota/vehicle-verify.js";
 import { runBorderTest } from "./runBorderTest.js";
 
-config();
+config({ quiet: true });
 
 const STEP_DELAY_MS = 500;
 
@@ -80,8 +81,20 @@ function printResultBanner(passed: boolean): void {
   }
 }
 
-async function main(): Promise<void> {
-  printHeader();
+type DemoTuiOptions = {
+  showHeader?: boolean;
+};
+
+export async function main(options: DemoTuiOptions = {}): Promise<void> {
+  const showHeader = options.showHeader ?? true;
+  let restart = true;
+  let hasPrintedHeader = false;
+  while (restart) {
+    restart = false;
+    if (showHeader && !hasPrintedHeader) {
+      printHeader();
+      hasPrintedHeader = true;
+    }
 
   const raw = await readFile("events/bordertest.json", "utf8");
   const events = JSON.parse(raw) as CanonicalEvent[];
@@ -226,59 +239,105 @@ async function main(): Promise<void> {
   console.log(chalk.cyan("-".repeat(72)));
   console.log();
 
-  const passed = compliance.result === "valid";
-  printResultBanner(passed);
-  console.log();
-  const stateLabel = passed ? "VALID" : "REJECT";
-  console.log(
-    chalk.cyan("Compliance State: ") +
-      (passed ? chalk.bold.green(stateLabel) : chalk.bold.red(stateLabel))
-  );
+  let runtimeState: "valid" | "hold" | "reject" = compliance.result === "valid" ? "valid" : "reject";
 
-  if (!passed) {
-    process.exitCode = 1;
-    return;
-  }
-
-  await sleep(STEP_DELAY_MS);
-  const anchorSpinner = ora(chalk.cyan("Anchoring proof on IOTA testnet...")).start();
-
-  const complianceHash = createHash("sha256")
-    .update(
-      JSON.stringify({
-        bundle_refs: compliance.bundle_refs,
-        result: compliance.result,
+  const doAnchor = async (result: boolean, state: "valid" | "hold", manual_override: boolean) => {
+    const anchorSpinner = ora(chalk.cyan("Registering compliance proof...")).start();
+    const payload = {
+      bundle_refs: compliance.bundle_refs,
+      result,
+      state,
+      manual_override,
+      timestamp: Date.now(),
+    };
+    const complianceHash = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    const adapter = new IotaNotarizationAdapter();
+    try {
+      const tx = await adapter.submitProof({
+        subject_ref: "vehicle:plate:TRUCK-BorderTest",
         profile_id: "bordertest-v1",
-      })
-    )
-    .digest("hex");
+        result,
+        bundle_hash: complianceHash,
+      });
+      anchorSpinner.stopAndPersist({ symbol: chalk.green("✓"), text: chalk.green("Registered") });
+      const explorerUrl = `https://explorer.iota.org/txblock/${tx.transaction_id}?network=testnet`;
+      console.log(chalk.cyan("TX ID: ") + chalk.yellow(terminalLink(tx.transaction_id, explorerUrl)));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      anchorSpinner.fail(chalk.red(`Anchor failed: ${msg}`));
+    }
+  };
 
-  const adapter = new IotaNotarizationAdapter();
+  const askPassword = (prompt: string): Promise<string> => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    return new Promise(resolve => rl.question(prompt, ans => { rl.close(); resolve(ans.trim()); }));
+  };
 
-  try {
-    const anchor = await adapter.submitProof({
-      subject_ref: "vehicle:plate:TRUCK-BorderTest",
-      profile_id: "bordertest-v1",
-      result: true,
-      bundle_hash: complianceHash,
-    });
+  const askMenu = (options: string[]): Promise<string> => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    console.log();
+    options.forEach(o => console.log(chalk.cyan(o)));
+    return new Promise(resolve => rl.question(chalk.cyan("> "), ans => { rl.close(); resolve(ans.trim()); }));
+  };
 
-    anchorSpinner.stopAndPersist({
-      symbol: chalk.green("✓"),
-      text: `${chalk.cyan("Anchoring proof on IOTA testnet...")} ${chalk.green("done")}`,
-    });
+  printResultBanner(runtimeState === "valid");
+  console.log();
+  const stateColor = runtimeState === "valid" ? chalk.bold.green : chalk.bold.red;
+  console.log(chalk.cyan("Compliance State: ") + stateColor(runtimeState.toUpperCase()));
+  console.log();
 
-    const explorerUrl = `https://explorer.iota.org/txblock/${anchor.transaction_id}?network=testnet`;
-    const txLink = terminalLink(chalk.yellow(anchor.transaction_id), explorerUrl);
-    console.log(chalk.cyan("TX ID: ") + txLink);
-    console.log(chalk.cyan("Explorer: ") + chalk.yellow(explorerUrl));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    anchorSpinner.fail(
-      `${chalk.red("✗")} ${chalk.cyan("Anchoring proof on IOTA testnet...")} ${chalk.red(message)}`
-    );
-    process.exitCode = 1;
+    if (runtimeState === "reject") {
+    console.log(chalk.red("Compliance failed. No blockchain operation executed."));
+    const choice = await askMenu(["[1] Exit", "[2] Wait for new registration"]);
+      if (choice === "2") {
+        console.log(chalk.cyan("\nWaiting for new registration...\n"));
+        restart = true;
+      }
+      if (restart) {
+        continue;
+      }
+      return;
+    }
+
+    // VALID — operator menu
+    const choice = await askMenu(["[1] Continue", "[2] Hold (manual)", "[3] Reject (manual)"]);
+
+    if (choice === "1") {
+      await doAnchor(true, "valid", false);
+      console.log(chalk.cyan("\nWaiting for next compliance check...\n"));
+      await sleep(2000);
+      restart = true;
+      continue;
+
+    } else if (choice === "2") {
+      const pwd = await askPassword(chalk.yellow("Password: "));
+      if (pwd !== "1234") { console.log(chalk.red("Wrong password.")); return; }
+      runtimeState = "hold";
+      console.log(chalk.yellow("\nState Transition: VALID → HOLD"));
+      console.log(chalk.yellow("Manual Hold applied\n"));
+      printResultBanner(false);
+      await doAnchor(false, "hold", true);
+      const choice2 = await askMenu(["[1] Manual Pass", "[2] Exit"]);
+      if (choice2 === "1") {
+        const pwd2 = await askPassword(chalk.yellow("Password: "));
+        if (pwd2 !== "1234") { console.log(chalk.red("Wrong password.")); return; }
+        console.log(chalk.green("\nState Transition: HOLD → PASSED"));
+        console.log(chalk.green("Manual override registered"));
+        console.log(chalk.green("Registered\n"));
+      }
+
+    } else if (choice === "3") {
+      runtimeState = "reject";
+      console.log(chalk.red("\nState Transition: VALID → REJECT"));
+      console.log(chalk.red("Corrupted file, contact your provider."));
+      console.log(chalk.red("No blockchain operation executed.\n"));
+      const choice2 = await askMenu(["[1] Exit", "[2] Wait for new registration"]);
+      if (choice2 === "2") {
+        console.log(chalk.cyan("\nWaiting for new registration...\n"));
+        restart = true;
+        continue;
+      }
+    }
   }
 }
-
-void main();
+// void main();
