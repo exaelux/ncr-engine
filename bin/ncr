@@ -34,7 +34,7 @@ async function ensureIdentityBackend() {
     return;
   }
 
-  const [{ spawn }, { config }, { existsSync }, { dirname, resolve }] =
+  const [{ spawn }, { config }, { existsSync, openSync, closeSync }, { dirname, resolve }] =
     await Promise.all([
       import("node:child_process"),
       import("dotenv"),
@@ -63,12 +63,15 @@ async function ensureIdentityBackend() {
     childEnv.STRONGHOLD_PASSWORD = "notia-dev";
   }
 
+  const logPath = "/tmp/ncr-identity-backend.log";
+  const logFd = openSync(logPath, "a");
   spawn("bash", ["-lc", "./start.sh"], {
     cwd: backendDir,
     env: childEnv,
     detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", logFd, logFd],
   }).unref();
+  closeSync(logFd);
 
   // First run can take longer due Rust release build.
   for (let i = 0; i < 300; i++) {
@@ -77,6 +80,10 @@ async function ensureIdentityBackend() {
     }
     await sleep(500);
   }
+
+  console.log(
+    `[ncr] Identity backend is still starting. You can check progress at ${logPath}`
+  );
 }
 
 async function main() {
