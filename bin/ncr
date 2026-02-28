@@ -84,6 +84,8 @@ async function ensureIdentityBackend() {
     stdio: ["ignore", logFd, logFd],
   }).unref();
   closeSync(logFd);
+  console.log(`[ncr] Starting local identity backend (${backendDir})...`);
+  console.log(`[ncr] Build logs: ${logPath}`);
 
   // First run can take longer due Rust release build.
   for (let i = 0; i < 300; i++) {
