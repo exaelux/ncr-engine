@@ -16,11 +16,25 @@ tsc
 # Local wallet material
 company-wallet.json
 wallet*.json
+profiles/*.local.json
+secrets/
+*.secret
+*.secrets
+*.credentials
+*.token
+*.seed
+*.mnemonic
 *.pem
 *.key
 *.p12
 *.pfx
+*.jwk
+*.keystore
 *.stronghold
+*.jwt
+*.pid
+*.tmp
+*.bak
 driver_did.json
 issuer_did.json
 driver_fragment.txt
