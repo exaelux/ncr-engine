@@ -13,9 +13,21 @@ NCR is a compliance runtime that consumes the @notia/core semantic standard.
 - IOTA Names: joebloggs.iota human-readable identity
 
 ## Running the demo
-1. Start identity server: `cd services/iota-identity-backend && ./start.sh`
-2. Run: `npm run demo:tui`
-3. Negative case: `npm run demo:tui:fail`
+1. Run watch mode: `ncr`
+2. Stable mode: `ncr demo`
+3. Force watch mode: `ncr watch`
+4. Negative case: `npm run demo:tui:fail`
+
+## Scenario profiles
+- Profiles are JSON files in `profiles/*.json`
+- Default profile: `profiles/bordertest.json`
+- Default input mode is on-chain (`eventSource: "onchain"` / `NCR_EVENT_SOURCE=onchain`)
+- Run with profile id:
+  - `ncr --profile bordertest`
+- Run with profile file path:
+  - `ncr --profile ./profiles/your-scenario.json`
+- You can also set `NCR_PROFILE=bordertest` in the environment
+- Optional demo fallback: `NCR_EVENT_SOURCE=file` (reads `eventsPath`)
 
 ## Move contracts (testnet)
 - notia_anchor: 0xf3153d...

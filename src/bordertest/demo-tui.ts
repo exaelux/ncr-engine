@@ -6,12 +6,23 @@ import { config } from "dotenv";
 import ora from "ora";
 import terminalLink from "terminal-link";
 import type { CanonicalEvent } from "@notia/core";
-import { verifyDriverVP } from "../iota/identity-verify.js";
+import { verifyDriverVP, type DriverIdentityResult } from "../iota/identity-verify.js";
 import { IotaNotarizationAdapter } from "../iota/notarization-anchor.js";
-import { verifyCargoManifestOnChain } from "../iota/cargo-verify.js";
+import {
+  verifyCargoManifestOnChain,
+  type CargoManifestResult,
+} from "../iota/cargo-verify.js";
 import resolveIotaName from "../iota/resolve-name.js";
-import { verifyVehicleCertOnChain } from "../iota/vehicle-verify.js";
+import {
+  verifyVehicleCertOnChain,
+  type VehicleCertResult,
+} from "../iota/vehicle-verify.js";
 import { runBorderTest } from "./runBorderTest.js";
+import {
+  loadScenarioProfile,
+  resolveProfilePath,
+  type ScenarioProfile,
+} from "./profile.js";
 
 config({ quiet: true });
 
@@ -26,8 +37,103 @@ function extractIotaAddressFromDid(did: string): string {
   return did.startsWith(prefix) ? did.slice(prefix.length) : did;
 }
 
-function iotaNameProfileUrl(): string {
-  return "https://explorer.iota.org/object/0x08be1014a00dc7f106fb0ce9526fa2934d2543b35708385f34d0fb7e34591162?network=testnet";
+const DEFAULT_IOTA_NAME_PROFILE_URL =
+  "https://explorer.iota.org/object/0x08be1014a00dc7f106fb0ce9526fa2934d2543b35708385f34d0fb7e34591162?network=testnet";
+const DEFAULT_COMPANY_NAME_URL =
+  "https://explorer.iota.org/object/0xbb390c55314f271eb904e598954711fda075af8604b33c948712f29810fe4386?network=testnet";
+const REQUIRED_SUPPLY_LOGS = [
+  "cold_chain_temperature_log",
+  "geo_tracking_log",
+  "weight_verification_scan",
+  "humidity_sensor_data",
+  "seal_integrity_check",
+  "xray_scan_result",
+];
+
+type ScanSnapshot = {
+  epochMs: number;
+  iso: string;
+  date: string;
+  time: string;
+};
+
+type EventSourceMode = "onchain" | "file";
+
+function resolveEventSource(profile: ScenarioProfile): EventSourceMode {
+  const source = (process.env.NCR_EVENT_SOURCE ?? profile.eventSource ?? "onchain")
+    .trim()
+    .toLowerCase();
+  return source === "file" ? "file" : "onchain";
+}
+
+async function loadFileEvents(profile: ScenarioProfile): Promise<CanonicalEvent[]> {
+  if (!profile.eventsPath || profile.eventsPath.trim() === "") {
+    throw new Error("eventsPath is required when NCR_EVENT_SOURCE=file");
+  }
+  const eventsPath = resolveProfilePath(profile.eventsPath);
+  const raw = await readFile(eventsPath, "utf8");
+  return JSON.parse(raw) as CanonicalEvent[];
+}
+
+function buildOnChainEvents(
+  scanSnapshot: ScanSnapshot,
+  profile: ScenarioProfile,
+  identity: DriverIdentityResult,
+  vehicleObjectId: string,
+  vehicleCert: VehicleCertResult,
+  cargoObjectId: string,
+  cargoManifest: CargoManifestResult
+): CanonicalEvent[] {
+  const timestampAt = (offsetSeconds: number): string =>
+    new Date(scanSnapshot.epochMs + offsetSeconds * 1000).toISOString();
+
+  return [
+    {
+      event_id: `scan-${scanSnapshot.epochMs}-identity`,
+      domain: "identity",
+      type: "driver_identity_check",
+      timestamp: timestampAt(0),
+      subject_ref: identity.driverDid,
+      attributes: {
+        identity_status: identity.verified ? "verified" : "revoked",
+        credential_count: identity.credentialCount,
+      },
+      context: { source: "iota_onchain" },
+    },
+    {
+      event_id: `scan-${scanSnapshot.epochMs}-vehicle`,
+      domain: "token",
+      type: "vehicle_cert_check",
+      timestamp: timestampAt(1),
+      subject_ref: profile.subjectRef,
+      attributes: {
+        token_id: vehicleObjectId,
+        certified: vehicleCert.valid,
+        expired: false,
+        plate: vehicleCert.plate,
+        vehicle_class: vehicleCert.vehicle_class,
+      },
+      context: {
+        source: "iota_onchain",
+        object_id: vehicleObjectId,
+      },
+    },
+    {
+      event_id: `scan-${scanSnapshot.epochMs}-cargo`,
+      domain: "supply",
+      type: "pharma_cargo_check",
+      timestamp: timestampAt(2),
+      subject_ref: `cargo:manifest:${cargoManifest.manifest_id}`,
+      attributes: {
+        manifest_id: cargoManifest.manifest_id,
+        logs: REQUIRED_SUPPLY_LOGS,
+      },
+      context: {
+        source: "iota_onchain",
+        object_id: cargoObjectId,
+      },
+    },
+  ];
 }
 
 function hasResolvedName(value: string | null | undefined, address: string): value is string {
@@ -83,16 +189,13 @@ function printResultBanner(passed: boolean): void {
 
 type DemoTuiOptions = {
   showHeader?: boolean;
-  scanSnapshot?: {
-    epochMs: number;
-    iso: string;
-    date: string;
-    time: string;
-  };
+  profile?: ScenarioProfile;
+  scanSnapshot?: ScanSnapshot;
 };
 
 export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | "exit"> {
   const showHeader = options.showHeader ?? true;
+  const profile = options.profile ?? await loadScenarioProfile();
   let pendingSnapshot = options.scanSnapshot;
   let restart = true;
   let hasPrintedHeader = false;
@@ -117,8 +220,15 @@ export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | 
     console.log(chalk.dim(`Scan Snapshot: ${scanSnapshot.date} ${scanSnapshot.time}`));
     console.log();
 
-  const raw = await readFile("events/bordertest.json", "utf8");
-  const events = JSON.parse(raw) as CanonicalEvent[];
+  let identityResult: DriverIdentityResult | null = null;
+  let vehicleResult: VehicleCertResult | null = null;
+  let cargoResult: CargoManifestResult | null = null;
+  const vehicleObjectId =
+    process.env.VEHICLE_CERTIFICATE_OBJECT_ID ??
+    profile.vehicleCertificateObjectId;
+  const cargoObjectId =
+    process.env.CARGO_MANIFEST_OBJECT_ID ??
+    profile.cargoManifestObjectId;
 
   await sleep(STEP_DELAY_MS);
   const identitySpinner = ora(chalk.cyan("Verifying driver identity...")).start();
@@ -129,6 +239,7 @@ export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | 
     if (!identity.verified) {
       throw new Error("driver VP is not valid");
     }
+    identityResult = identity;
     driverDid = identity.driverDid;
 
     const didAddress = extractIotaAddressFromDid(driverDid);
@@ -153,7 +264,7 @@ export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | 
     }
 
     const displayName = resolvedName
-      ? terminalLink(chalk.yellow(resolvedName), iotaNameProfileUrl())
+      ? terminalLink(chalk.yellow(resolvedName), profile.identityNameObjectUrl ?? DEFAULT_IOTA_NAME_PROFILE_URL)
       : chalk.yellow(driverDid);
 
     identitySpinner.stopAndPersist({
@@ -172,21 +283,19 @@ export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | 
   await sleep(STEP_DELAY_MS);
   const companyAddress = process.env.COMPANY_ADDRESS ?? "";
   const companyName = companyAddress ? await resolveIotaName(companyAddress) : null;
-  const companyNameUrl = "https://explorer.iota.org/object/0xbb390c55314f271eb904e598954711fda075af8604b33c948712f29810fe4386?network=testnet";
+  const companyNameUrl = profile.companyNameObjectUrl ?? DEFAULT_COMPANY_NAME_URL;
   const companyBadge = companyName
     ? chalk.yellow(terminalLink(companyName, companyNameUrl))
     : "";
   const vehicleSpinner = ora(chalk.cyan("Checking vehicle certificate on IOTA...")).start();
 
   try {
-    const vehicleObjectId =
-      process.env.VEHICLE_CERTIFICATE_OBJECT_ID ??
-      "0xa099c94a8ee9b7bca40eda065170ec48e836967c6712d5349509af5987e5d226";
     const vehicleCert = await verifyVehicleCertOnChain(vehicleObjectId);
 
     if (!vehicleCert.valid) {
       throw new Error(vehicleCert.reason ?? "vehicle certificate is not valid");
     }
+    vehicleResult = vehicleCert;
 
     const vehicleText = `${vehicleCert.plate} (${vehicleCert.vehicle_class})`;
     const vehicleUrl = `https://explorer.iota.org/object/${vehicleObjectId}?network=testnet`;
@@ -209,14 +318,12 @@ export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | 
   const cargoSpinner = ora(chalk.cyan("Verifying cargo manifest on IOTA...")).start();
 
   try {
-    const cargoObjectId =
-      process.env.CARGO_MANIFEST_OBJECT_ID ??
-      "0x69e29715734c4944137bb4548e6d2b4ee379d1101f5603fb6d8ebb5e249e4c91";
     const cargoManifest = await verifyCargoManifestOnChain(cargoObjectId);
 
     if (!cargoManifest.valid) {
       throw new Error(cargoManifest.reason ?? "cargo manifest is not valid");
     }
+    cargoResult = cargoManifest;
 
     const cargoUrl = `https://explorer.iota.org/object/${cargoObjectId}?network=testnet`;
     const cargoLink = terminalLink(chalk.yellow(cargoManifest.manifest_id), cargoUrl);
@@ -237,6 +344,25 @@ export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | 
   await sleep(STEP_DELAY_MS);
   const complianceSpinner = ora(chalk.cyan("Evaluating cargo compliance...")).start();
 
+  if (!identityResult || !vehicleResult || !cargoResult) {
+    complianceSpinner.fail(chalk.red("Missing on-chain verification inputs."));
+    process.exitCode = 1;
+    return "exit";
+  }
+
+  const eventSource = resolveEventSource(profile);
+  const events =
+    eventSource === "file"
+      ? await loadFileEvents(profile)
+      : buildOnChainEvents(
+          scanSnapshot,
+          profile,
+          identityResult,
+          vehicleObjectId,
+          vehicleResult,
+          cargoObjectId,
+          cargoResult
+        );
   const { compliance } = runBorderTest(events);
   const domainMap: Record<string, string> = {
     identity: "Driver",
@@ -269,6 +395,7 @@ export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | 
       result,
       state,
       manual_override,
+      profile_id: profile.anchorProfileId,
       timestamp: scanSnapshot.epochMs,
       scan_snapshot_iso: scanSnapshot.iso,
     };
@@ -276,8 +403,8 @@ export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | 
     const adapter = new IotaNotarizationAdapter();
     try {
       const tx = await adapter.submitProof({
-        subject_ref: "vehicle:plate:TRUCK-BorderTest",
-        profile_id: "bordertest-v1",
+        subject_ref: profile.subjectRef,
+        profile_id: profile.anchorProfileId,
         result,
         bundle_hash: complianceHash,
       });
@@ -342,6 +469,8 @@ export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | 
       }
 
     } else if (choice === "3") {
+      const pwd = await askPassword(chalk.yellow("Password: "));
+      if (pwd !== "1234") { console.log(chalk.red("Wrong password.")); return "exit"; }
       runtimeState = "reject";
       console.log(chalk.red("\nState Transition: VALID → REJECT"));
       console.log(chalk.red("Corrupted file, contact your provider."));

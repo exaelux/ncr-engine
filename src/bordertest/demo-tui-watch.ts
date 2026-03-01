@@ -1,3 +1,4 @@
+import { loadScenarioProfile, type ScenarioProfile } from "./profile.js";
 const C = "\x1b[1;36m", D = "\x1b[2;37m", W = "\x1b[1;37m", R = "\x1b[0m";
 const HIDE = "\x1b[?25l", SHOW = "\x1b[?25h", CLEAR = "\x1b[2J\x1b[H";
 
@@ -55,7 +56,7 @@ function supportsAnimatedUi(): boolean {
   return Boolean(process.stdout.isTTY && process.stdin.isTTY && process.env.TERM !== "dumb");
 }
 
-function renderPrelude(dimLogo: boolean): void {
+function renderPrelude(dimLogo: boolean, subtitleLine: string): void {
   const logoColor = dimLogo ? D : C;
   process.stdout.write(CLEAR + "\n");
   for (const line of LOGO) {
@@ -64,7 +65,7 @@ function renderPrelude(dimLogo: boolean): void {
   process.stdout.write("\n");
   process.stdout.write(D + "  ─────────────────────────────────────\n" + R);
   process.stdout.write("  " + C + "NOTIA Compliance Runtime" + R + "\n");
-  process.stdout.write(D + "  BorderTest · IOTA Testnet · v0.1\n" + R);
+  process.stdout.write(D + `  ${subtitleLine}\n` + R);
   process.stdout.write(D + "  ─────────────────────────────────────\n" + R);
   const { date, time } = getDateTime();
   process.stdout.write("\n");
@@ -170,25 +171,27 @@ function waitForEnterInline(promptBase: string, alreadyRendered = false): Promis
   });
 }
 
-async function waitForScan(): Promise<ScanSnapshot> {
+async function waitForScan(subtitleLine: string): Promise<ScanSnapshot> {
   const prompt = "  Press ENTER to start NCR runtime... ";
 
   if (ENABLE_SCAN_EFFECT && supportsAnimatedUi()) {
-    renderPrelude(true);
+    renderPrelude(true, subtitleLine);
     await runScanEffect();
     await runPromptScan(prompt);
     return waitForEnterInline(prompt, true);
   } else {
-    renderPrelude(false);
+    renderPrelude(false, subtitleLine);
     return waitForEnterInline(prompt);
   }
 }
 
 async function main(): Promise<void> {
   const { main: demoMain } = await import("./demo-tui.js");
+  const profile: ScenarioProfile = await loadScenarioProfile();
+  const subtitleLine = `${profile.label} · ${profile.networkLabel} · ${profile.runtimeVersion}`;
   while (true) {
-    const scanSnapshot = await waitForScan();
-    const nextAction = await demoMain({ showHeader: false, scanSnapshot });
+    const scanSnapshot = await waitForScan(subtitleLine);
+    const nextAction = await demoMain({ showHeader: false, scanSnapshot, profile });
     if (nextAction !== "to_header") {
       return;
     }

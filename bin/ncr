@@ -77,6 +77,7 @@ async function ensureIdentityBackend() {
 
   const logPath = "/tmp/ncr-identity-backend.log";
   const runningPattern =
+    `${backendDir}/target/release/identity-server|` +
     `${backendDir}/target/release/iota-identity-backend|` +
     `cargo build --release --manifest-path ${backendDir}/Cargo.toml`;
   const bootstrapRunning =
@@ -115,10 +116,33 @@ async function main() {
   if (!process.env.DOTENV_CONFIG_QUIET) {
     process.env.DOTENV_CONFIG_QUIET = "true";
   }
+  const [{ realpathSync }, { dirname, resolve }] = await Promise.all([
+    import("node:fs"),
+    import("node:path"),
+  ]);
+  const scriptPath = process.argv[1] ? realpathSync(process.argv[1]) : "";
+  const binDir = scriptPath ? dirname(scriptPath) : process.cwd();
+  if (!process.env.NCR_ENGINE_HOME) {
+    process.env.NCR_ENGINE_HOME = resolve(binDir, "..");
+  }
 
   const args = process.argv.slice(2);
   let watchMode = true; // default: `ncr` => watch experience
-  for (const arg of args) {
+  let profileId = process.env.NCR_PROFILE;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--profile") {
+      const next = args[i + 1];
+      if (next) {
+        profileId = next;
+        i++;
+      }
+      continue;
+    }
+    if (arg.startsWith("--profile=")) {
+      profileId = arg.slice("--profile=".length);
+      continue;
+    }
     if (arg === "demo" || arg === "--demo" || arg === "--no-watch") {
       watchMode = false;
       continue;
@@ -126,6 +150,9 @@ async function main() {
     if (arg === "watch" || arg === "--watch") {
       watchMode = true;
     }
+  }
+  if (profileId) {
+    process.env.NCR_PROFILE = profileId;
   }
   process.env.NCR_WATCH_ANIMATE = watchMode ? "1" : "0";
 
