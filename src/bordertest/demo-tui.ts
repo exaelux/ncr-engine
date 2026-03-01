@@ -91,7 +91,7 @@ type DemoTuiOptions = {
   };
 };
 
-export async function main(options: DemoTuiOptions = {}): Promise<void> {
+export async function main(options: DemoTuiOptions = {}): Promise<"to_header" | "exit"> {
   const showHeader = options.showHeader ?? true;
   let pendingSnapshot = options.scanSnapshot;
   let restart = true;
@@ -166,7 +166,7 @@ export async function main(options: DemoTuiOptions = {}): Promise<void> {
       `${chalk.red("✗")} ${chalk.cyan("Verifying driver identity...")} ${chalk.red(message)}`
     );
     process.exitCode = 1;
-    return;
+    return "exit";
   }
 
   await sleep(STEP_DELAY_MS);
@@ -202,7 +202,7 @@ export async function main(options: DemoTuiOptions = {}): Promise<void> {
       `${chalk.red("✗")} ${chalk.cyan("Checking vehicle certificate on IOTA...")} ${chalk.red(message)}`
     );
     process.exitCode = 1;
-    return;
+    return "exit";
   }
 
   await sleep(STEP_DELAY_MS);
@@ -231,7 +231,7 @@ export async function main(options: DemoTuiOptions = {}): Promise<void> {
       `${chalk.red("✗")} ${chalk.cyan("Verifying cargo manifest on IOTA...")} ${chalk.red(message)}`
     );
     process.exitCode = 1;
-    return;
+    return "exit";
   }
 
   await sleep(STEP_DELAY_MS);
@@ -312,13 +312,9 @@ export async function main(options: DemoTuiOptions = {}): Promise<void> {
     console.log(chalk.red("Compliance failed. No blockchain operation executed."));
     const choice = await askMenu(["[1] Exit", "[2] Wait for new registration"]);
       if (choice === "2") {
-        console.log(chalk.cyan("\nWaiting for new registration...\n"));
-        restart = true;
+        return "to_header";
       }
-      if (restart) {
-        continue;
-      }
-      return;
+      return "exit";
     }
 
     // VALID — operator menu
@@ -326,14 +322,11 @@ export async function main(options: DemoTuiOptions = {}): Promise<void> {
 
     if (choice === "1") {
       await doAnchor(true, "valid", false);
-      console.log(chalk.cyan("\nWaiting for next compliance check...\n"));
-      await sleep(2000);
-      restart = true;
-      continue;
+      return "to_header";
 
     } else if (choice === "2") {
       const pwd = await askPassword(chalk.yellow("Password: "));
-      if (pwd !== "1234") { console.log(chalk.red("Wrong password.")); return; }
+      if (pwd !== "1234") { console.log(chalk.red("Wrong password.")); return "exit"; }
       runtimeState = "hold";
       console.log(chalk.yellow("\nState Transition: VALID → HOLD"));
       console.log(chalk.yellow("Manual Hold applied\n"));
@@ -342,7 +335,7 @@ export async function main(options: DemoTuiOptions = {}): Promise<void> {
       const choice2 = await askMenu(["[1] Manual Pass", "[2] Exit"]);
       if (choice2 === "1") {
         const pwd2 = await askPassword(chalk.yellow("Password: "));
-        if (pwd2 !== "1234") { console.log(chalk.red("Wrong password.")); return; }
+        if (pwd2 !== "1234") { console.log(chalk.red("Wrong password.")); return "exit"; }
         console.log(chalk.green("\nState Transition: HOLD → PASSED"));
         console.log(chalk.green("Manual override registered"));
         console.log(chalk.green("Registered\n"));
@@ -355,11 +348,11 @@ export async function main(options: DemoTuiOptions = {}): Promise<void> {
       console.log(chalk.red("No blockchain operation executed.\n"));
       const choice2 = await askMenu(["[1] Exit", "[2] Wait for new registration"]);
       if (choice2 === "2") {
-        console.log(chalk.cyan("\nWaiting for new registration...\n"));
-        restart = true;
-        continue;
+        return "to_header";
       }
     }
+    return "exit";
   }
+  return "exit";
 }
 // void main();

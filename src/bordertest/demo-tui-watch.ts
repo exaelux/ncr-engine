@@ -185,9 +185,14 @@ async function waitForScan(): Promise<ScanSnapshot> {
 }
 
 async function main(): Promise<void> {
-  const scanSnapshot = await waitForScan();
   const { main: demoMain } = await import("./demo-tui.js");
-  await demoMain({ showHeader: false, scanSnapshot });
+  while (true) {
+    const scanSnapshot = await waitForScan();
+    const nextAction = await demoMain({ showHeader: false, scanSnapshot });
+    if (nextAction !== "to_header") {
+      return;
+    }
+  }
 }
 
 void main();
